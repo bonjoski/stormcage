@@ -16,10 +16,10 @@ import (
 	"github.com/bonjoski/stormcage/pkg/firewall"
 	"github.com/bonjoski/stormcage/pkg/schema"
 	"github.com/bonjoski/stormcage/pkg/taint"
+	"github.com/bonjoski/stormcage/pkg/version"
 )
 
 const (
-	Version   = "0.1.0"
 	Banner    = "Stormcage Context & Memory Firewall (bonjoski toolchain)"
 )
 
@@ -40,7 +40,7 @@ func main() {
 	case "daemon":
 		runDaemon(args)
 	case "version", "--version", "-v":
-		fmt.Printf("stormcage v%s\n", Version)
+		fmt.Printf("stormcage %s\n", version.Version)
 	case "help", "--help", "-h":
 		printUsage()
 	default:
@@ -51,7 +51,7 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Printf("%s v%s\n\n", Banner, Version)
+	fmt.Printf("%s %s\n\n", Banner, version.Version)
 	fmt.Println("Usage:")
 	fmt.Println("  stormcage scan [--input <file.json>] [--privilege HIGH|MEDIUM|LOW]")
 	fmt.Println("  stormcage sanitize [--input <file>]")
@@ -140,7 +140,7 @@ func runDaemon(args []string) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status":  "ok",
-			"version": Version,
+			"version": version.Version,
 		})
 	})
 
