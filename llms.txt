@@ -1,0 +1,19 @@
+# Stormcage
+
+> Cross-Agent Context & Memory Firewall (Roshar Fabrial Archetype).
+
+## Core Capabilities
+- Context & Memory Firewall: Prevents Cross-Agent Persistent Prompt Injections (OWASP LLM01) across shared agent memory pools, scratchpads, and context windows.
+- Semantic Taint Tracker: Manages provenance flags (`TRUST_LOCAL_WORKSPACE`, `TAINT_EXTERNAL_USER`, `TAINT_UNTRUSTED_WEB`) and privilege gating.
+- AST Normalizer & Stripper: NFKC unicode decomposition, zero-width rune removal (`U+200B..U+200F`, `U+FEFF`), HTML comment flattening, and Base64/Hex payload extraction.
+- Multi-Tier Injection Detector: Static OWASP LLM01 rules, imperative verb density scoring, and semantic intent-drift vector tracking.
+- Verdict Cache: SHA-256 hashed cache for <0.5ms repeat evaluation.
+
+## CLI Usage
+- `stormcage scan --input "<text>"`: Scans input for prompt injection or system override attacks.
+- `stormcage sanitize --input "<text>"`: Strips hidden runes and normalizes text.
+- `stormcage daemon --port 8181 --socket ~/.stormcage/stormcage.sock`: Starts HTTP/socket firewall daemon.
+
+## Sockets & Documentation
+- Daemon Socket: `~/.stormcage/stormcage.sock`
+- Documentation: `docs/knowledge-base/08-stormcage.md` in repo `spanreed`
