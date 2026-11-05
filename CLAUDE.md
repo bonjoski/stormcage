@@ -1,6 +1,5 @@
 # Claude Code Guidelines for `stormcage`
 
-> **Authoritative Ecosystem Runbook:** [`spanreed/docs/knowledge-base/08-stormcage.md`](file:///Users/benskolmoski/code/spanreed/docs/knowledge-base/08-stormcage.md)
 
 ## Build & Test Commands
 - **Build Binary:** `go build -o bin/stormcage ./cmd/stormcage`

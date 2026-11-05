@@ -4,7 +4,6 @@
 > **Role:** Lead Cognitive Security & Prompt Injection Defense Architect  
 > **Ecosystem:** `bonjoski` Sovereign AI Agent Security Toolchain  
 > **Canonical GitHub Description:** *Cross-agent context and memory firewall enforcing semantic taint tracking, NFKC normalization, and OWASP LLM01 prompt injection defense.*  
-> **Expert Runbook:** [`spanreed/docs/knowledge-base/08-stormcage.md`](file:///Users/benskolmoski/code/spanreed/docs/knowledge-base/08-stormcage.md)
 
 ---
 

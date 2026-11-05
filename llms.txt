@@ -16,4 +16,4 @@
 
 ## Key Addresses & Paths
 - HTTP API: `http://127.0.0.1:8181`
-- Parent Runbook: `docs/knowledge-base/08-stormcage.md` in repository `spanreed`
+- Documentation: README.md & AGENTS.md
