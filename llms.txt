@@ -1,19 +1,19 @@
 # Stormcage
 
-> Cross-Agent Context & Memory Firewall (Roshar Fabrial Archetype).
+> Cross-agent context and memory firewall enforcing semantic taint tracking, NFKC normalization, and OWASP LLM01 prompt injection defense.
 
 ## Core Capabilities
-- Context & Memory Firewall: Prevents Cross-Agent Persistent Prompt Injections (OWASP LLM01) across shared agent memory pools, scratchpads, and context windows.
-- Semantic Taint Tracker: Manages provenance flags (`TRUST_LOCAL_WORKSPACE`, `TAINT_EXTERNAL_USER`, `TAINT_UNTRUSTED_WEB`) and privilege gating.
-- AST Normalizer & Stripper: NFKC unicode decomposition, zero-width rune removal (`U+200B..U+200F`, `U+FEFF`), HTML comment flattening, and Base64/Hex payload extraction.
-- Multi-Tier Injection Detector: Static OWASP LLM01 rules, imperative verb density scoring, and semantic intent-drift vector tracking.
-- Verdict Cache: SHA-256 hashed cache for <0.5ms repeat evaluation.
+- Semantic Provenance Taint Tracking: Labels context fragments with `TRUST_LOCAL_WORKSPACE`, `TAINT_EXTERNAL_USER`, or `TAINT_UNTRUSTED_WEB`.
+- NFKC Unicode Decomposition: Neutralizes homoglyph cloaking and strips invisible zero-width characters.
+- Multi-Tier Injection Detection: Evaluates text against OWASP LLM01 signatures and semantic intent-drift models.
+- SHA-256 Verdict Caching: Delivers sub-0.5ms evaluation speeds across shared agent scratchpads.
+- Context Quarantine: Blocks contaminated memories from reaching execution-tier agents.
 
 ## CLI Usage
-- `stormcage scan --input "<text>"`: Scans input for prompt injection or system override attacks.
-- `stormcage sanitize --input "<text>"`: Strips hidden runes and normalizes text.
-- `stormcage daemon --port 8181 --socket ~/.stormcage/stormcage.sock`: Starts HTTP/socket firewall daemon.
+- `stormcage scan --input "<text>"`: Evaluates arbitrary text for prompt injection risks.
+- `stormcage filter --file <path>`: Strips dangerous Unicode and normalizes file content.
+- `stormcage server --port 8181`: Runs background memory firewall API server.
 
-## Sockets & Documentation
-- Daemon Socket: `~/.stormcage/stormcage.sock`
-- Documentation: `docs/knowledge-base/08-stormcage.md` in repo `spanreed`
+## Key Addresses & Paths
+- HTTP API: `http://127.0.0.1:8181`
+- Parent Runbook: `docs/knowledge-base/08-stormcage.md` in repository `spanreed`
