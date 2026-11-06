@@ -2,4 +2,4 @@ module github.com/bonjoski/stormcage
 
 go 1.27.3
 
-require golang.org/x/text v0.43.0 // indirect
+require golang.org/x/text v0.43.0
