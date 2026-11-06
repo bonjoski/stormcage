@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,18 +10,21 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/bonjoski/stormcage/pkg/firewall"
 	"github.com/bonjoski/stormcage/pkg/schema"
+	"github.com/bonjoski/stormcage/pkg/status"
 	"github.com/bonjoski/stormcage/pkg/taint"
 	"github.com/bonjoski/stormcage/pkg/version"
 )
 
 const (
-	Banner    = "Stormcage Context & Memory Firewall (bonjoski toolchain)"
+	Banner = "Stormcage Context & Memory Firewall (bonjoski toolchain)"
 )
 
 func main() {
@@ -33,6 +37,8 @@ func main() {
 	args := os.Args[2:]
 
 	switch command {
+	case "status":
+		runStatus(args)
 	case "scan":
 		runScan(args)
 	case "sanitize":
@@ -53,6 +59,7 @@ func main() {
 func printUsage() {
 	fmt.Printf("%s %s\n\n", Banner, version.Version)
 	fmt.Println("Usage:")
+	fmt.Println("  stormcage status [--json] [--endpoint <url>]")
 	fmt.Println("  stormcage scan [--input <file.json>] [--privilege HIGH|MEDIUM|LOW]")
 	fmt.Println("  stormcage sanitize [--input <file>]")
 	fmt.Println("  stormcage daemon [--port 8088]")
@@ -66,39 +73,204 @@ func readInput(inputPath string) ([]byte, error) {
 	return os.ReadFile(inputPath)
 }
 
+func runStatus(args []string) {
+	code := executeStatus(args, os.Stdout, os.Stderr)
+	if code != 0 {
+		os.Exit(code)
+	}
+}
+
+func executeStatus(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("status", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	jsonOutput := fs.Bool("json", false, "Output status in JSON format")
+	endpoint := fs.String("endpoint", status.DefaultEndpoint, "Daemon health endpoint")
+	port := fs.Int("port", 0, "Daemon port (overrides endpoint port)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	targetEndpoint := *endpoint
+	if *port > 0 {
+		targetEndpoint = fmt.Sprintf("http://%s:%d", "127.0.0.1", *port)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	pidPath := status.DefaultPIDPath()
+	res := status.CheckDaemon(ctx, targetEndpoint, pidPath)
+
+	if *jsonOutput {
+		data, _ := res.FormatJSON()
+		fmt.Fprintln(stdout, string(data))
+	} else {
+		fmt.Fprint(stdout, res.FormatHuman())
+	}
+
+	if !res.Online {
+		return 1
+	}
+	return 0
+}
+
 func runScan(args []string) {
-	fs := flag.NewFlagSet("scan", flag.ExitOnError)
+	code := executeScan(args, os.Stdin, os.Stdout, os.Stderr)
+	if code != 0 {
+		os.Exit(code)
+	}
+}
+
+func executeScan(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
+	fs.SetOutput(stderr)
 	inputPath := fs.String("input", "", "Path to JSON memory record file (or '-' for stdin)")
 	privilegeStr := fs.String("privilege", "HIGH", "Target agent privilege level (HIGH, MEDIUM, LOW)")
-	_ = fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
 
 	privilege, err := taint.ParsePrivilegeLevel(*privilegeStr)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error parsing privilege: %v\n", err)
-		os.Exit(2)
+		fmt.Fprintf(stderr, "error parsing privilege: %v\n", err)
+		return 2
 	}
 
-	data, err := readInput(*inputPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error reading input: %v\n", err)
-		os.Exit(2)
-	}
+	var record *schema.MemoryRecord
 
-	record, err := schema.ParseStrictJSON(data)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "schema validation error: %v\n", err)
-		os.Exit(2)
+	if *inputPath != "" {
+		var data []byte
+		if *inputPath == "-" {
+			d, err := io.ReadAll(stdin)
+			if err != nil {
+				fmt.Fprintf(stderr, "error reading stdin: %v\n", err)
+				return 2
+			}
+			data = d
+		} else if fileData, err := os.ReadFile(*inputPath); err == nil {
+			data = fileData
+		} else {
+			if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENAMETOOLONG) {
+				if (strings.HasSuffix(*inputPath, ".json") || strings.HasSuffix(*inputPath, ".txt")) &&
+					!strings.Contains(*inputPath, " ") && !strings.HasPrefix(*inputPath, "{") {
+					fmt.Fprintf(stderr, "error reading input: %v\n", err)
+					return 2
+				}
+				data = []byte(*inputPath)
+			} else {
+				fmt.Fprintf(stderr, "error reading input: %v\n", err)
+				return 2
+			}
+		}
+
+		trimmed := bytes.TrimSpace(data)
+		if bytes.HasPrefix(trimmed, []byte("{")) {
+			rec, err := schema.ParseStrictJSON(trimmed)
+			if err != nil {
+				fmt.Fprintf(stderr, "schema validation error: %v\n", err)
+				return 2
+			}
+			record = rec
+		} else {
+			if len(trimmed) == 0 {
+				fmt.Fprintln(stderr, "error: empty input provided")
+				return 2
+			}
+			record = &schema.MemoryRecord{
+				AgentID:    "cli-scanner",
+				Taint:      taint.TAINT_EXTERNAL_USER,
+				Content:    string(trimmed),
+				TaskIntent: "Security scan of input content",
+			}
+		}
+	} else {
+		// --input is NOT specified
+		// Check if stdin has data
+		hasPipedData := false
+		var pipedData []byte
+
+		if file, ok := stdin.(*os.File); ok && file == os.Stdin {
+			stat, err := os.Stdin.Stat()
+			if err == nil && (stat.Mode()&os.ModeCharDevice) == 0 {
+				data, err := io.ReadAll(os.Stdin)
+				if err == nil && len(bytes.TrimSpace(data)) > 0 {
+					hasPipedData = true
+					pipedData = bytes.TrimSpace(data)
+				}
+			}
+		} else if stdin != nil && stdin != os.Stdin {
+			// In tests or non-os.Stdin readers with data
+			data, err := io.ReadAll(stdin)
+			if err == nil && len(bytes.TrimSpace(data)) > 0 {
+				hasPipedData = true
+				pipedData = bytes.TrimSpace(data)
+			}
+		}
+
+		if hasPipedData {
+			if bytes.HasPrefix(pipedData, []byte("{")) {
+				rec, err := schema.ParseStrictJSON(pipedData)
+				if err != nil {
+					fmt.Fprintf(stderr, "schema validation error: %v\n", err)
+					return 2
+				}
+				record = rec
+			} else {
+				record = &schema.MemoryRecord{
+					AgentID:    "pipe-scanner",
+					Taint:      taint.TAINT_EXTERNAL_USER,
+					Content:    string(pipedData),
+					TaskIntent: "Security scan of piped content",
+				}
+			}
+		} else {
+			// Stdin is a TTY / no data piped: DO NOT BLOCK.
+			// Automatically capture working tree git diff
+			diffCmd := exec.Command("git", "diff", "HEAD")
+			diffOut, diffErr := diffCmd.Output()
+			if diffErr != nil || len(bytes.TrimSpace(diffOut)) == 0 {
+				if d, err := exec.Command("git", "diff").Output(); err == nil && len(bytes.TrimSpace(d)) > 0 {
+					diffOut = d
+					diffErr = nil
+				}
+			}
+
+			if diffErr == nil && len(bytes.TrimSpace(diffOut)) > 0 {
+				record = &schema.MemoryRecord{
+					AgentID:    "git-diff",
+					Taint:      taint.TRUST_LOCAL_WORKSPACE,
+					Content:    string(diffOut),
+					TaskIntent: "Scan working tree git diff for prompt injection and malicious instructions",
+				}
+			} else {
+				// Diff is empty, check recent git commits
+				logCmd := exec.Command("git", "log", "-n", "5", "--pretty=format:%B")
+				logOut, logErr := logCmd.Output()
+				if logErr == nil && len(bytes.TrimSpace(logOut)) > 0 {
+					record = &schema.MemoryRecord{
+						AgentID:    "git-commits",
+						Taint:      taint.TRUST_LOCAL_WORKSPACE,
+						Content:    string(logOut),
+						TaskIntent: "Scan recent git commits for prompt injection and malicious instructions",
+					}
+				} else {
+					fmt.Fprintln(stdout, "No input provided and no git working tree changes or recent commits found to scan.")
+					return 0
+				}
+			}
+		}
 	}
 
 	fw := firewall.NewFirewall()
 	verdict := fw.Gate(record, privilege)
 
 	out, _ := json.MarshalIndent(verdict, "", "  ")
-	fmt.Println(string(out))
+	fmt.Fprintln(stdout, string(out))
 
 	if verdict.Status == firewall.DecisionQuarantined {
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func runSanitize(args []string) {
@@ -130,6 +302,12 @@ func runDaemon(args []string) {
 	fs := flag.NewFlagSet("daemon", flag.ExitOnError)
 	port := fs.Int("port", 8088, "HTTP port for memory write interceptor")
 	_ = fs.Parse(args)
+
+	pidPath := status.DefaultPIDPath()
+	if pidPath != "" {
+		_ = status.WritePID(pidPath, os.Getpid())
+		defer status.RemovePID(pidPath)
+	}
 
 	fw := firewall.NewFirewall()
 
