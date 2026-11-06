@@ -113,16 +113,16 @@ func runSanitize(args []string) {
 	}
 
 	// Try parsing as JSON envelope, otherwise treat as plain text
+	sanitizer := firewall.NewPreFlightSanitizer()
 	var record schema.MemoryRecord
 	if err := json.Unmarshal(data, &record); err == nil && record.Content != "" {
-		sanitized := schema.SanitizeText(record.Content)
-		record.Content = sanitized
+		record.Content = sanitizer.Neutralize(record.Content)
 		out, _ := json.MarshalIndent(record, "", "  ")
 		fmt.Println(string(out))
 		return
 	}
 
-	sanitized := schema.SanitizeText(string(data))
+	sanitized := sanitizer.Neutralize(string(data))
 	fmt.Print(sanitized)
 }
 

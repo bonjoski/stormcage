@@ -60,6 +60,20 @@ var defaultInjectionRules = []InjectionRule{
 		Weight:      0.90,
 		Description: "New imperative priority override directive",
 	},
+	{
+		ID:          "LLM01-007",
+		Name:        "LocalhostWebSocketPivot",
+		Regex:       regexp.MustCompile(`(?i)(?:wss?:\/\/(?:127(?:\.[0-9]{1,3}){3}|localhost|\[::1\]|169\.254\.169\.254|[a-z0-9_.-]+)|(?:https?|tcp|udp):\/\/(?:127(?:\.[0-9]{1,3}){3}|localhost|\[::1\]|169\.254\.169\.254)(?::[0-9]+)?|\b(?:127\.0\.0\.1|localhost|\[::1\]|169\.254\.169\.254):(8080|9090|2375|2376|4243|11434)\b)`),
+		Weight:      0.98,
+		Description: "WebSocket or localhost loopback pivoting targeting local control plane interfaces (OpenClaw CVE-2026-25253)",
+	},
+	{
+		ID:          "LLM01-008",
+		Name:        "ArtificialDelimiterInjection",
+		Regex:       regexp.MustCompile(`(?i)(?:<\/?(?:openclaw_execute|control_panel|system_override|root_exec)(?:\s+[^>]*)?>|\[(?:SYSTEM_OVERRIDE|ROOT_EXEC|CONTROL_PANEL|OPENCLAW_EXECUTE)\]|\{\{\s*(?:control_panel|system_override|root_exec|openclaw_execute)[^}]*\}\})`),
+		Weight:      0.95,
+		Description: "Artificial prompt-injection delimiter or execution envelope smuggling",
+	},
 }
 
 // DetectionResult encapsulates the output of prompt injection evaluation.

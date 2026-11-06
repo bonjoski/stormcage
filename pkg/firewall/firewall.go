@@ -31,15 +31,17 @@ type Verdict struct {
 
 // Firewall coordinates multi-tier static, semantic, and structural inspection.
 type Firewall struct {
-	detector *Detector
-	cache    *VerdictCache
+	detector  *Detector
+	cache     *VerdictCache
+	sanitizer *PreFlightSanitizer
 }
 
 // NewFirewall initializes a new Firewall instance.
 func NewFirewall() *Firewall {
 	return &Firewall{
-		detector: NewDetector(),
-		cache:    NewVerdictCache(10000),
+		detector:  NewDetector(),
+		cache:     NewVerdictCache(10000),
+		sanitizer: NewPreFlightSanitizer(),
 	}
 }
 
@@ -99,11 +101,12 @@ func (f *Firewall) Gate(record *schema.MemoryRecord, targetPrivilege taint.Privi
 
 	// 5. Structural & Cloaking sanitization
 	if norm.StrippedRunes > 0 || len(norm.MarkersFound) > 0 || len(norm.DecodedPayloads) > 0 {
+		cleaned := f.sanitizer.Neutralize(norm.Cleaned)
 		v := &Verdict{
 			Status:         DecisionSanitized,
 			Reason:         "markdown_cloaking_neutralized",
 			Taint:          record.Taint,
-			CleanedContent: norm.Cleaned,
+			CleanedContent: cleaned,
 			RiskScore:      0.25,
 			Details:        norm.MarkersFound,
 			LatencyMs:      float64(time.Since(start).Microseconds()) / 1000.0,
@@ -115,11 +118,12 @@ func (f *Firewall) Gate(record *schema.MemoryRecord, targetPrivilege taint.Privi
 
 	// 6. Direct access policy check for elevated privilege agents
 	if targetPrivilege == taint.PRIVILEGE_HIGH && record.Taint != taint.TRUST_LOCAL_WORKSPACE {
+		cleaned := f.sanitizer.Neutralize(norm.Cleaned)
 		v := &Verdict{
 			Status:         DecisionSanitized,
 			Reason:         "sanitized_for_elevated_privilege",
 			Taint:          record.Taint,
-			CleanedContent: norm.Cleaned,
+			CleanedContent: cleaned,
 			RiskScore:      0.10,
 			LatencyMs:      float64(time.Since(start).Microseconds()) / 1000.0,
 			Cached:         false,

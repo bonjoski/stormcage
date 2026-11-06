@@ -39,7 +39,7 @@ var invisibleRunes = map[rune]bool{
 var (
 	htmlCommentRegex = regexp.MustCompile(`(?s)<!--.*?-->`)
 	mdCommentRegex   = regexp.MustCompile(`(?m)^\[//\]:\s*#\s*\((.*?)\)$`)
-	roleMarkersRegex = regexp.MustCompile(`(?i)(</?(?:system|admin|instruction|developer|prompt|context|assistant|user)>|\[/?(?:INSTRUCTION|SYSTEM|ADMIN|DEVELOPER)\]|<<SYS>>|<</SYS>>|<\|(?:im_start|im_end|system|user|assistant)\|>)`)
+	roleMarkersRegex = regexp.MustCompile(`(?i)(</?(?:system|admin|instruction|developer|prompt|context|assistant|user|openclaw_execute|control_panel|system_override|root_exec)(?:\s+[^>]*)?>|\[/?(?:INSTRUCTION|SYSTEM|ADMIN|DEVELOPER|SYSTEM_OVERRIDE|ROOT_EXEC|CONTROL_PANEL|OPENCLAW_EXECUTE)\]|<<SYS>>|<</SYS>>|<\|(?:im_start|im_end|system|user|assistant)\|>|\{\{\s*(?:control_panel|system_override|root_exec|openclaw_execute)[^}]*\}\})`)
 	hexPayloadRegex  = regexp.MustCompile(`(?i)(?:0x|\\x)([0-9a-f]{2,})`)
 )
 
