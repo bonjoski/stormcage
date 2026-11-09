@@ -2,11 +2,33 @@ package firewall
 
 import (
 	"math"
-	"regexp"
 	"strings"
 )
 
-var wordBoundaryRegex = regexp.MustCompile(`[a-zA-Z0-9_\-]+`)
+func tokenizeASCIIWords(text string) []string {
+	n := len(text)
+	if n == 0 {
+		return nil
+	}
+	tokens := make([]string, 0, n/6+1)
+	var buf []byte
+	for i := 0; i < n; i++ {
+		c := text[i]
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-' {
+			buf = append(buf, c)
+		} else if len(buf) > 0 {
+			tokens = append(tokens, string(buf))
+			buf = buf[:0]
+		}
+	}
+	if len(buf) > 0 {
+		tokens = append(tokens, string(buf))
+	}
+	return tokens
+}
 
 // Common imperative command verbs associated with rogue action hijacking.
 var imperativeKeywords = map[string]float64{
@@ -46,19 +68,22 @@ type TermVector map[string]float64
 
 // buildVector constructs a normalized term frequency vector from text.
 func buildVector(text string) TermVector {
-	tokens := wordBoundaryRegex.FindAllString(strings.ToLower(text), -1)
+	return buildVectorFromTokens(tokenizeASCIIWords(text))
+}
+
+func buildVectorFromTokens(tokens []string) TermVector {
 	if len(tokens) == 0 {
 		return TermVector{}
 	}
 
-	counts := make(map[string]int)
+	counts := make(map[string]int, len(tokens)/2+1)
 	for _, tok := range tokens {
 		if len(tok) >= 2 {
 			counts[tok]++
 		}
 	}
 
-	vec := make(TermVector)
+	vec := make(TermVector, len(counts))
 	var sumSquares float64
 	for tok, c := range counts {
 		val := float64(c)
@@ -95,7 +120,7 @@ func CosineSimilarity(v1, v2 TermVector) float64 {
 // AnalyzeIntentDrift evaluates whether untrusted content departs significantly from task intent
 // and pivots into imperative command hijacking.
 func AnalyzeIntentDrift(taskIntent, content string) *IntentDriftScore {
-	tokens := wordBoundaryRegex.FindAllString(strings.ToLower(content), -1)
+	tokens := tokenizeASCIIWords(content)
 	if len(tokens) == 0 {
 		return &IntentDriftScore{
 			DriftDetected: false,
@@ -133,7 +158,7 @@ func AnalyzeIntentDrift(taskIntent, content string) *IntentDriftScore {
 
 	// Compare TaskIntent with incoming Content
 	vIntent := buildVector(taskIntent)
-	vContent := buildVector(content)
+	vContent := buildVectorFromTokens(tokens)
 	similarity := CosineSimilarity(vIntent, vContent)
 
 	// Drift condition: Context drastically deviates from declared intent (low similarity)

@@ -13,6 +13,8 @@ type TaintLevel string
 const (
 	// TRUST_LOCAL_WORKSPACE represents verified local source code and authorized local configuration.
 	TRUST_LOCAL_WORKSPACE TaintLevel = "TRUST_LOCAL_WORKSPACE"
+	// TAINT_SHARED_DOC represents shared repository history (e.g. git log commit messages) or collaborative docs.
+	TAINT_SHARED_DOC TaintLevel = "TAINT_SHARED_DOC"
 	// TAINT_EXTERNAL_USER represents data originating from PR comments, issue descriptions, or external user chat.
 	TAINT_EXTERNAL_USER TaintLevel = "TAINT_EXTERNAL_USER"
 	// TAINT_UNTRUSTED_WEB represents web crawls, scraper output, documentation, and external API responses.
@@ -39,7 +41,7 @@ func (t TaintLevel) Severity() int {
 	switch t {
 	case TRUST_LOCAL_WORKSPACE:
 		return 0
-	case TAINT_EXTERNAL_USER:
+	case TAINT_SHARED_DOC, TAINT_EXTERNAL_USER:
 		return 1
 	case TAINT_UNTRUSTED_WEB:
 		return 2
@@ -51,7 +53,7 @@ func (t TaintLevel) Severity() int {
 // IsValid checks whether the TaintLevel is recognized.
 func (t TaintLevel) IsValid() bool {
 	switch t {
-	case TRUST_LOCAL_WORKSPACE, TAINT_EXTERNAL_USER, TAINT_UNTRUSTED_WEB:
+	case TRUST_LOCAL_WORKSPACE, TAINT_SHARED_DOC, TAINT_EXTERNAL_USER, TAINT_UNTRUSTED_WEB:
 		return true
 	default:
 		return false
@@ -59,11 +61,17 @@ func (t TaintLevel) IsValid() bool {
 }
 
 // ParseTaintLevel parses a string into a validated TaintLevel.
+func (t TaintLevel) String() string {
+	return string(t)
+}
+
 func ParseTaintLevel(s string) (TaintLevel, error) {
 	upper := strings.ToUpper(strings.TrimSpace(s))
 	switch TaintLevel(upper) {
 	case TRUST_LOCAL_WORKSPACE:
 		return TRUST_LOCAL_WORKSPACE, nil
+	case TAINT_SHARED_DOC:
+		return TAINT_SHARED_DOC, nil
 	case TAINT_EXTERNAL_USER:
 		return TAINT_EXTERNAL_USER, nil
 	case TAINT_UNTRUSTED_WEB:

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -186,6 +187,24 @@ func TestStatusSubcommand_LiveAndOffline(t *testing.T) {
 }
 
 func TestScanNoArgsReturnsUnder50msWithoutHanging(t *testing.T) {
+	// Run inside an isolated temporary git repository so latency measurement is hermetic
+	// and independent of arbitrarily large uncommitted working-tree diffs in the host repo.
+	repoDir := t.TempDir()
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v (%s)", args, err, string(out))
+		}
+	}
+	runGit("init", "-q")
+	tracked := filepath.Join(repoDir, "app.go")
+	if err := os.WriteFile(tracked, []byte("package app\nfunc Run() int { return 2 }\n"), 0600); err != nil {
+		t.Fatalf("write tracked file: %v", err)
+	}
+	runGit("add", "-N", "app.go")
+	t.Chdir(repoDir)
+
 	var stdout, stderr bytes.Buffer
 
 	start := time.Now()
@@ -249,6 +268,79 @@ func TestScanPipedInputAndFlags(t *testing.T) {
 	codeFile := executeScan([]string{"--input", tmpFile}, nil, &stdoutFile, &stderrFile)
 	if codeFile != 0 {
 		t.Errorf("expected code 0 for clean file scan, got %d (stderr: %s)", codeFile, stderrFile.String())
+	}
+}
+
+func TestDaemonMux_ProvenanceSignatureEnforcement(t *testing.T) {
+	secret := []byte("test-hmac-key-stormcage-32bytes!!")
+	fw := firewall.NewFirewall()
+	mux := newDaemonMux(fw, secret)
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	// 1. Unsigned record claiming TRUST_LOCAL_WORKSPACE must be downgraded to TAINT_EXTERNAL_USER
+	unsignedBody := `{
+		"agent_id": "rogue-caller",
+		"taint": "TRUST_LOCAL_WORKSPACE",
+		"task_intent": "Read API schema",
+		"content": " benign note with ws://127.0.0.1:8080/debug "
+	}`
+	resp1, err := http.Post(ts.URL+"/v1/memory/write", "application/json", bytes.NewBufferString(unsignedBody))
+	if err != nil {
+		t.Fatalf("post failed: %v", err)
+	}
+	defer resp1.Body.Close()
+
+	// Because ws://127.0.0.1:8080 triggers LLM01-007 or taint downgrade, taint must NOT remain TRUST_LOCAL_WORKSPACE
+	var out1 map[string]interface{}
+	if err := json.NewDecoder(resp1.Body).Decode(&out1); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if out1["taint"] == string(taint.TRUST_LOCAL_WORKSPACE) {
+		t.Errorf("STC-03 regression: unsigned HTTP request retained TRUST_LOCAL_WORKSPACE taint: %+v", out1)
+	}
+
+	// 2. Forged signature must be rejected with HTTP 401
+	forgedBody := `{
+		"agent_id": "rogue-caller",
+		"taint": "TRUST_LOCAL_WORKSPACE",
+		"signature": "deadbeef",
+		"content": "const x = 1;"
+	}`
+	resp2, err := http.Post(ts.URL+"/v1/memory/write", "application/json", bytes.NewBufferString(forgedBody))
+	if err != nil {
+		t.Fatalf("post failed: %v", err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusUnauthorized {
+		t.Errorf("STC-03 regression: forged signature expected HTTP 401, got %d", resp2.StatusCode)
+	}
+
+	// 3. Valid HMAC-signed TRUST_LOCAL_WORKSPACE record succeeds with TRUST_LOCAL_WORKSPACE preserved
+	signedRec := &schema.MemoryRecord{
+		AgentID: "trusted-indexer",
+		Taint:   taint.TRUST_LOCAL_WORKSPACE,
+		Content: "package calc\nfunc Sum(a, b int) int { return a + b }",
+	}
+	signedRec.Sign(secret)
+	signedJSON, err := signedRec.ToJSON()
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	resp3, err := http.Post(ts.URL+"/v1/memory/write", "application/json", bytes.NewReader(signedJSON))
+	if err != nil {
+		t.Fatalf("post failed: %v", err)
+	}
+	defer resp3.Body.Close()
+	if resp3.StatusCode != http.StatusOK {
+		t.Fatalf("expected HTTP 200 for valid signed record, got %d", resp3.StatusCode)
+	}
+	var out3 map[string]interface{}
+	if err := json.NewDecoder(resp3.Body).Decode(&out3); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if out3["taint"] != string(taint.TRUST_LOCAL_WORKSPACE) {
+		t.Errorf("expected signed record to retain TRUST_LOCAL_WORKSPACE, got %v", out3["taint"])
 	}
 }
 

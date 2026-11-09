@@ -60,7 +60,7 @@ func (f *Firewall) Gate(record *schema.MemoryRecord, targetPrivilege taint.Privi
 	norm := schema.Normalize(record.Content)
 
 	// 3. Tier 0: Fast static injection scan across raw, cleaned, and decoded payloads
-	det := f.detector.Scan(record.Content)
+	det := f.detector.ScanNormalized(record.Content, norm)
 	if det.IsInjected {
 		v := &Verdict{
 			Status:       DecisionQuarantined,
@@ -99,9 +99,23 @@ func (f *Firewall) Gate(record *schema.MemoryRecord, targetPrivilege taint.Privi
 		}
 	}
 
-	// 5. Structural & Cloaking sanitization
+	// 5. Structural & Cloaking sanitization (with post-sanitization fail-closed re-scan)
 	if norm.StrippedRunes > 0 || len(norm.MarkersFound) > 0 || len(norm.DecodedPayloads) > 0 {
 		cleaned := f.sanitizer.Neutralize(norm.Cleaned)
+		if postDet := f.detector.Scan(cleaned); postDet.IsInjected {
+			v := &Verdict{
+				Status:       DecisionQuarantined,
+				Reason:       postDet.Reason,
+				Taint:        record.Taint,
+				RiskScore:    postDet.Confidence,
+				MatchedRules: postDet.MatchedRuleIDs,
+				Details:      postDet.Details,
+				LatencyMs:    float64(time.Since(start).Microseconds()) / 1000.0,
+				Cached:       false,
+			}
+			f.cache.Set(cacheKey, v)
+			return v
+		}
 		v := &Verdict{
 			Status:         DecisionSanitized,
 			Reason:         "markdown_cloaking_neutralized",
@@ -119,6 +133,20 @@ func (f *Firewall) Gate(record *schema.MemoryRecord, targetPrivilege taint.Privi
 	// 6. Direct access policy check for elevated privilege agents
 	if targetPrivilege == taint.PRIVILEGE_HIGH && record.Taint != taint.TRUST_LOCAL_WORKSPACE {
 		cleaned := f.sanitizer.Neutralize(norm.Cleaned)
+		if postDet := f.detector.Scan(cleaned); postDet.IsInjected {
+			v := &Verdict{
+				Status:       DecisionQuarantined,
+				Reason:       postDet.Reason,
+				Taint:        record.Taint,
+				RiskScore:    postDet.Confidence,
+				MatchedRules: postDet.MatchedRuleIDs,
+				Details:      postDet.Details,
+				LatencyMs:    float64(time.Since(start).Microseconds()) / 1000.0,
+				Cached:       false,
+			}
+			f.cache.Set(cacheKey, v)
+			return v
+		}
 		v := &Verdict{
 			Status:         DecisionSanitized,
 			Reason:         "sanitized_for_elevated_privilege",

@@ -62,7 +62,7 @@ func printUsage() {
 	fmt.Println("  stormcage status [--json] [--endpoint <url>]")
 	fmt.Println("  stormcage scan [--input <file.json>] [--privilege HIGH|MEDIUM|LOW]")
 	fmt.Println("  stormcage sanitize [--input <file>]")
-	fmt.Println("  stormcage daemon [--port 8088]")
+	fmt.Println("  stormcage daemon [--host 127.0.0.1] [--port 8088] [--hmac-key-env STORMCAGE_HMAC_KEY]")
 	fmt.Println("  stormcage version")
 }
 
@@ -225,11 +225,11 @@ func executeScan(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 		} else {
 			// Stdin is a TTY / no data piped: DO NOT BLOCK.
-			// Automatically capture working tree git diff
-			diffCmd := exec.Command("git", "diff", "HEAD")
+			// Automatically capture working tree git diff (--no-ext-diff prevents external diff helper execution)
+			diffCmd := exec.Command("git", "--no-pager", "diff", "--no-ext-diff", "HEAD")
 			diffOut, diffErr := diffCmd.Output()
 			if diffErr != nil || len(bytes.TrimSpace(diffOut)) == 0 {
-				if d, err := exec.Command("git", "diff").Output(); err == nil && len(bytes.TrimSpace(d)) > 0 {
+				if d, err := exec.Command("git", "--no-pager", "diff", "--no-ext-diff").Output(); err == nil && len(bytes.TrimSpace(d)) > 0 {
 					diffOut = d
 					diffErr = nil
 				}
@@ -243,13 +243,13 @@ func executeScan(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 					TaskIntent: "Scan working tree git diff for prompt injection and malicious instructions",
 				}
 			} else {
-				// Diff is empty, check recent git commits
+				// Diff is empty, check recent git commits (shared history may include external contributors)
 				logCmd := exec.Command("git", "log", "-n", "5", "--pretty=format:%B")
 				logOut, logErr := logCmd.Output()
 				if logErr == nil && len(bytes.TrimSpace(logOut)) > 0 {
 					record = &schema.MemoryRecord{
 						AgentID:    "git-commits",
-						Taint:      taint.TRUST_LOCAL_WORKSPACE,
+						Taint:      taint.TAINT_SHARED_DOC,
 						Content:    string(logOut),
 						TaskIntent: "Scan recent git commits for prompt injection and malicious instructions",
 					}
@@ -298,48 +298,76 @@ func runSanitize(args []string) {
 	fmt.Print(sanitized)
 }
 
-func runDaemon(args []string) {
-	fs := flag.NewFlagSet("daemon", flag.ExitOnError)
-	port := fs.Int("port", 8088, "HTTP port for memory write interceptor")
-	_ = fs.Parse(args)
-
-	pidPath := status.DefaultPIDPath()
-	if pidPath != "" {
-		_ = status.WritePID(pidPath, os.Getpid())
-		defer status.RemovePID(pidPath)
-	}
-
-	fw := firewall.NewFirewall()
-
+func newDaemonMux(fw *firewall.Firewall, hmacSecret []byte) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// GET /v1/health
 	mux.HandleFunc("GET /v1/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{
+		if err := json.NewEncoder(w).Encode(map[string]string{
 			"status":  "ok",
 			"version": version.Version,
-		})
+		}); err != nil {
+			http.Error(w, `{"error":"encode_failed"}`, http.StatusInternalServerError)
+		}
 	})
 
 	// POST /v1/memory/write
 	mux.HandleFunc("POST /v1/memory/write", func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(io.LimitReader(r.Body, schema.MaxContentLength))
+		r.Body = http.MaxBytesReader(w, r.Body, schema.MaxContentLength+4096)
+		defer r.Body.Close()
+
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			http.Error(w, `{"error": "failed to read request body"}`, http.StatusBadRequest)
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+				if encErr := json.NewEncoder(w).Encode(map[string]string{
+					"error": "request_body_too_large",
+				}); encErr != nil {
+					fmt.Fprintf(os.Stderr, "encode error: %v\n", encErr)
+				}
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			if encErr := json.NewEncoder(w).Encode(map[string]string{
+				"error": "failed to read request body",
+			}); encErr != nil {
+				fmt.Fprintf(os.Stderr, "encode error: %v\n", encErr)
+			}
 			return
 		}
-		defer r.Body.Close()
 
 		record, err := schema.ParseStrictJSON(body)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
+			if encErr := json.NewEncoder(w).Encode(map[string]string{
 				"error":   "schema_validation_failed",
 				"details": err.Error(),
-			})
+			}); encErr != nil {
+				fmt.Fprintf(os.Stderr, "encode error: %v\n", encErr)
+			}
 			return
+		}
+
+		// Fail-closed provenance verification: reject invalid signatures outright, and never trust
+		// unauthenticated TRUST_LOCAL_WORKSPACE claims over HTTP unless cryptographically signed.
+		if record.Signature != "" {
+			if !record.VerifySignature(hmacSecret) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				if encErr := json.NewEncoder(w).Encode(map[string]string{
+					"error": "signature_verification_failed",
+				}); encErr != nil {
+					fmt.Fprintf(os.Stderr, "encode error: %v\n", encErr)
+				}
+				return
+			}
+		} else if record.Taint == taint.TRUST_LOCAL_WORKSPACE {
+			record.Taint = taint.TAINT_EXTERNAL_USER
 		}
 
 		verdict := fw.Gate(record, taint.PRIVILEGE_HIGH)
@@ -347,37 +375,77 @@ func runDaemon(args []string) {
 		w.Header().Set("Content-Type", "application/json")
 		if verdict.Status == firewall.DecisionQuarantined {
 			w.WriteHeader(http.StatusUnprocessableEntity) // HTTP 422
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			if encErr := json.NewEncoder(w).Encode(map[string]interface{}{
 				"status":  verdict.Status,
 				"reason":  verdict.Reason,
 				"taint":   verdict.Taint,
 				"details": verdict.Details,
-			})
+			}); encErr != nil {
+				fmt.Fprintf(os.Stderr, "encode error: %v\n", encErr)
+			}
 			return
 		}
 
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		if encErr := json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":          verdict.Status,
 			"reason":          verdict.Reason,
 			"taint":           verdict.Taint,
 			"cleaned_content": verdict.CleanedContent,
 			"latency_ms":      verdict.LatencyMs,
-		})
+		}); encErr != nil {
+			fmt.Fprintf(os.Stderr, "encode error: %v\n", encErr)
+		}
 	})
 
+	return mux
+}
+
+func runDaemon(args []string) {
+	fs := flag.NewFlagSet("daemon", flag.ExitOnError)
+	host := fs.String("host", "127.0.0.1", "Bind host address for memory write interceptor (loopback by default)")
+	port := fs.Int("port", 8088, "HTTP port for memory write interceptor")
+	hmacKeyEnv := fs.String("hmac-key-env", "STORMCAGE_HMAC_KEY", "Environment variable holding HMAC-SHA256 secret for TRUST_LOCAL_WORKSPACE verification")
+	if err := fs.Parse(args); err != nil {
+		os.Exit(2)
+	}
+
+	pidPath := status.DefaultPIDPath()
+	if pidPath != "" {
+		if err := status.WritePID(pidPath, os.Getpid()); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to write pid file: %v\n", err)
+		}
+		defer status.RemovePID(pidPath)
+	}
+
+	var hmacSecret []byte
+	if *hmacKeyEnv != "" {
+		hmacSecret = []byte(os.Getenv(*hmacKeyEnv))
+	}
+
+	fw := firewall.NewFirewall()
+	mux := newDaemonMux(fw, hmacSecret)
+
+	bindHost := strings.TrimSpace(*host)
+	if bindHost == "" {
+		bindHost = "127.0.0.1"
+	}
+	listenAddr := fmt.Sprintf("%s:%d", bindHost, *port)
+
 	server := &http.Server{
-		Addr:         fmt.Sprintf(":%d", *port),
-		Handler:      mux,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 5 * time.Second,
+		Addr:              listenAddr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      5 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		fmt.Printf("Stormcage Context Firewall listening on :%d...\n", *port)
+		fmt.Printf("Stormcage Context Firewall listening on %s...\n", listenAddr)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			fmt.Fprintf(os.Stderr, "server error: %v\n", err)
 		}
@@ -387,6 +455,8 @@ func runDaemon(args []string) {
 	fmt.Println("\nShutting down Stormcage daemon...")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	_ = server.Shutdown(ctx)
+	if err := server.Shutdown(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "shutdown error: %v\n", err)
+	}
 	fmt.Println("Stormcage daemon stopped.")
 }
