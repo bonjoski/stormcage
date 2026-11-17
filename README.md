@@ -1,5 +1,9 @@
 # Stormcage (`bonjoski/stormcage`)
 
+[![CI](https://github.com/bonjoski/stormcage/actions/workflows/ci.yml/badge.svg)](https://github.com/bonjoski/stormcage/actions/workflows/ci.yml)
+[![SLSA 2](https://slsa.dev/images/gh-badge-level2.svg)](https://slsa.dev)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 > **Cross-Agent Context & Memory Firewall**  
 > Sovereign AI Agent Security Toolchain — Roshar Fabrial Archetype
 
@@ -101,4 +105,18 @@ curl -X POST http://localhost:8088/v1/memory/write \
   - Dangerous shell executions (`bash -c`, `rm -rf`, `curl | bash`, reverse shells)
   - Delimiter spoofing (`<|im_start|>system`, `<<SYS>>`, `<system>`)
   - Polyglot cloaking (Base64 + HTML comments + nested blockquotes)
-  - Invisible Unicode tags (U+E0000 - U+E007F) and zero-width spaces (U+200B, U+200C, U+200D, U+FEFF).
+---
+
+## 6. SLSA Provenance & Verification
+
+Stormcage adheres to the **SLSA v1.0** specification.
+
+Verify provenance with GitHub CLI:
+```bash
+gh attestation verify stormcage --repo bonjoski/stormcage
+```
+
+Or verify offline using Soulcaster:
+```bash
+soulcaster verify --attestation stormcage.intoto.jsonl bin/stormcage
+```
