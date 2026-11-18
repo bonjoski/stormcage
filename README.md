@@ -97,6 +97,18 @@ curl -X POST http://localhost:8088/v1/memory/write \
 
 ---
 
+## 💡 Core Use Cases & Recipes
+
+Every primary developer use case is backed by dedicated, copy-pasteable recipes in [**`docs/use-cases/`**](docs/use-cases/README.md):
+
+| Use Case | Scenario & Quick Recipe | Full Guide |
+| :--- | :--- | :--- |
+| **Cross-Agent Context Taint Scanning** | Scan untrusted text (web scrape output, issues) for prompt injection:<br/>`stormcage scan --input issue.txt` | [Guide](docs/use-cases/01-context-taint-scanning.md) |
+| **Unicode Normalization & Invisible Stripping** | Strip zero-width characters and homoglyphs from context:<br/>`stormcage sanitize <input>` | [Guide](docs/use-cases/02-unicode-normalization.md) |
+| **Compartmentalized Shared Memory Firewall** | Enforce strict memory partitions between untrusted workers and coordinator:<br/>`stormcage daemon start` | [Guide](docs/use-cases/03-memory-firewall-daemon.md) |
+
+---
+
 ## 5. Security & Benchmark Metrics
 
 - **Latency:**
