@@ -106,6 +106,7 @@ Every primary developer use case is backed by dedicated, copy-pasteable recipes 
 | **Cross-Agent Context Taint Scanning** | Scan untrusted text (web scrape output, issues) for prompt injection:<br/>`stormcage scan --input issue.txt` | [Guide](docs/use-cases/01-context-taint-scanning.md) |
 | **Unicode Normalization & Invisible Stripping** | Strip zero-width characters and homoglyphs from context:<br/>`stormcage sanitize <input>` | [Guide](docs/use-cases/02-unicode-normalization.md) |
 | **Compartmentalized Shared Memory Firewall** | Enforce strict memory partitions between untrusted workers and coordinator:<br/>`stormcage daemon start` | [Guide](docs/use-cases/03-memory-firewall-daemon.md) |
+| **XML Tool Reflection & Delimiter Firewall** | Defang artificial delimiters (`<tool_call>`, `</untrusted_artifact>`) and execution envelopes:<br/>`stormcage sanitize --fence <input>` | [Guide](docs/use-cases/04-xml-tool-reflection-firewall.md) |
 
 ---
 

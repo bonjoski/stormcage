@@ -27,8 +27,8 @@ var (
 	localhostURLRegex = regexp.MustCompile(`(?i)\b(?:https?|tcp|udp|ftp):\/\/(?:127(?:\.[0-9]{1,3}){1,3}|0\.0\.0\.0|localhost|\[::1\]|\[::ffff:(?:127(?:\.[0-9]{1,3}){3}|169\.254\.169\.254)\]|\[fd00:ec2::254\]|169\.254\.169\.254)(?::[0-9]+)?(?:\/[^\s"'<>\` + "`" + `()]*)?`)
 	localhostTargetRegex = regexp.MustCompile(`(?i)(?:\b(?:127(?:\.[0-9]{1,3}){1,3}|0\.0\.0\.0|localhost|169\.254\.169\.254)(?::[0-9]+)?\b|\[::1\](?::[0-9]+)?|\[::ffff:(?:127(?:\.[0-9]{1,3}){3}|169\.254\.169\.254)\](?::[0-9]+)?|\[fd00:ec2::254\](?::[0-9]+)?|(?:::1:[0-9]+)\b)`)
 
-	// Artificial prompt-injection delimiters
-	xmlDelimiterRegex = regexp.MustCompile(`(?i)<\/?(?:untrusted_artifact|untrusted_code_artifact|untrusted_external_artifact|untrusted_[a-z0-9_-]+|openclaw_execute|control_panel|system_override|root_exec|openclaw_[a-z0-9_-]+|system_[a-z0-9_-]+|admin_[a-z0-9_-]+|system|admin|instruction|developer|prompt|context|assistant|user)(?:\s+[^>]*)?>`)
+	// Artificial prompt-injection delimiters and XML tool reflection tags
+	xmlDelimiterRegex = regexp.MustCompile(`(?i)<\/?(?:untrusted_artifact|untrusted_code_artifact|untrusted_external_artifact|untrusted_[a-z0-9_-]+|openclaw_execute|control_panel|system_override|root_exec|openclaw_[a-z0-9_-]+|system_[a-z0-9_-]+|admin_[a-z0-9_-]+|system|admin|instruction|developer|prompt|context|assistant|user|tool_call|tool_response|tool_results|function_call|call_tool|result|observation|thought|antml)(?:\s+[^>]*)?>`)
 	bracketDelimiterRegex = regexp.MustCompile(`(?i)\[\/?(?:SYSTEM_OVERRIDE|ROOT_EXEC|CONTROL_PANEL|OPENCLAW_EXECUTE|ADMIN_OVERRIDE|SYSTEM_INSTRUCTION)\]`)
 	templateDelimiterRegex = regexp.MustCompile(`(?i)(?:\{\{\s*\/?(?:control_panel|system_override|root_exec|openclaw_execute|system|admin)[^}]*\}\}|\{%\s*(?:control_panel|system_override|root_exec|openclaw_execute|system|admin)[^%]*%\})`)
 )

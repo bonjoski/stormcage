@@ -78,10 +78,10 @@ var defaultInjectionRules = []InjectionRule{
 	{
 		ID:          "LLM01-008",
 		Name:        "ArtificialDelimiterInjection",
-		Keywords:    []string{"openclaw", "control_panel", "system_override", "root_exec", "system_", "admin_"},
-		Regex:       regexp.MustCompile(`(?i)(?:<\/?(?:openclaw_execute|control_panel|system_override|root_exec|openclaw_[a-z0-9_-]+|system_[a-z0-9_-]+|admin_[a-z0-9_-]+)(?:\s+[^>]*)?>|\[\/?(?:SYSTEM_OVERRIDE|ROOT_EXEC|CONTROL_PANEL|OPENCLAW_EXECUTE|ADMIN_OVERRIDE|SYSTEM_INSTRUCTION)\]|\{\{\s*\/?(?:control_panel|system_override|root_exec|openclaw_execute)[^}]*\}\}|\{%\s*(?:control_panel|system_override|root_exec|openclaw_execute)[^%]*%\})`),
+		Keywords:    []string{"openclaw", "control_panel", "system_override", "root_exec", "system_", "admin_", "tool_call", "tool_response", "function_call", "call_tool"},
+		Regex:       regexp.MustCompile(`(?i)(?:<\/?(?:openclaw_execute|control_panel|system_override|root_exec|openclaw_[a-z0-9_-]+|system_[a-z0-9_-]+|admin_[a-z0-9_-]+|tool_call|tool_response|tool_results|function_call|call_tool|result|observation|thought|antml)(?:\s+[^>]*)?>|\[\/?(?:SYSTEM_OVERRIDE|ROOT_EXEC|CONTROL_PANEL|OPENCLAW_EXECUTE|ADMIN_OVERRIDE|SYSTEM_INSTRUCTION)\]|\{\{\s*\/?(?:control_panel|system_override|root_exec|openclaw_execute)[^}]*\}\}|\{%\s*(?:control_panel|system_override|root_exec|openclaw_execute)[^%]*%\})`),
 		Weight:      0.95,
-		Description: "Artificial prompt-injection delimiter or execution envelope smuggling",
+		Description: "Artificial prompt-injection delimiter, tool reflection, or execution envelope smuggling",
 	},
 }
 
