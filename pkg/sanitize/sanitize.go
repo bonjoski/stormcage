@@ -19,3 +19,9 @@ func Sanitize(input string) *Result {
 func Neutralize(input string) string {
 	return DefaultSanitizer.Neutralize(input)
 }
+
+// FenceUntrustedArtifact wraps untrusted text inside strict <untrusted_artifact> boundary fences
+// after stripping zero-width runes and neutralizing prompt injection delimiters.
+func FenceUntrustedArtifact(input string) string {
+	return DefaultSanitizer.FenceUntrustedArtifact(input)
+}

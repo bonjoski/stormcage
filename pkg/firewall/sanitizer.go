@@ -1,6 +1,7 @@
 package firewall
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -27,7 +28,7 @@ var (
 	localhostTargetRegex = regexp.MustCompile(`(?i)(?:\b(?:127(?:\.[0-9]{1,3}){1,3}|0\.0\.0\.0|localhost|169\.254\.169\.254)(?::[0-9]+)?\b|\[::1\](?::[0-9]+)?|\[::ffff:(?:127(?:\.[0-9]{1,3}){3}|169\.254\.169\.254)\](?::[0-9]+)?|\[fd00:ec2::254\](?::[0-9]+)?|(?:::1:[0-9]+)\b)`)
 
 	// Artificial prompt-injection delimiters
-	xmlDelimiterRegex = regexp.MustCompile(`(?i)<\/?(?:openclaw_execute|control_panel|system_override|root_exec|openclaw_[a-z0-9_-]+|system_[a-z0-9_-]+|admin_[a-z0-9_-]+)(?:\s+[^>]*)?>`)
+	xmlDelimiterRegex = regexp.MustCompile(`(?i)<\/?(?:untrusted_artifact|untrusted_code_artifact|untrusted_external_artifact|untrusted_[a-z0-9_-]+|openclaw_execute|control_panel|system_override|root_exec|openclaw_[a-z0-9_-]+|system_[a-z0-9_-]+|admin_[a-z0-9_-]+|system|admin|instruction|developer|prompt|context|assistant|user)(?:\s+[^>]*)?>`)
 	bracketDelimiterRegex = regexp.MustCompile(`(?i)\[\/?(?:SYSTEM_OVERRIDE|ROOT_EXEC|CONTROL_PANEL|OPENCLAW_EXECUTE|ADMIN_OVERRIDE|SYSTEM_INSTRUCTION)\]`)
 	templateDelimiterRegex = regexp.MustCompile(`(?i)(?:\{\{\s*\/?(?:control_panel|system_override|root_exec|openclaw_execute|system|admin)[^}]*\}\}|\{%\s*(?:control_panel|system_override|root_exec|openclaw_execute|system|admin)[^%]*%\})`)
 )
@@ -153,4 +154,16 @@ func (s *PreFlightSanitizer) Sanitize(input string) *SanitizerResult {
 func (s *PreFlightSanitizer) Neutralize(input string) string {
 	res := s.Sanitize(input)
 	return res.Cleaned
+}
+
+// FenceUntrustedArtifact wraps untrusted content inside strict <untrusted_artifact> boundary fences
+// after stripping zero-width runes and neutralizing prompt injection delimiters.
+func (s *PreFlightSanitizer) FenceUntrustedArtifact(input string) string {
+	cleaned := s.Neutralize(input)
+	return fmt.Sprintf("<untrusted_artifact>\n%s\n</untrusted_artifact>", cleaned)
+}
+
+// FenceUntrustedArtifact wraps untrusted content inside strict <untrusted_artifact> boundary fences.
+func FenceUntrustedArtifact(input string) string {
+	return NewPreFlightSanitizer().FenceUntrustedArtifact(input)
 }
